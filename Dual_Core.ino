@@ -1,15 +1,9 @@
 #include <Arduino.h>
-#ifdef ESP32
 #include <WiFi.h>
 #include <AsyncTCP.h>
-#elif defined(ESP8266)
-#include <ESP8266WiFi.h>
-#include <ESPAsyncTCP.h>
-#endif
 #include <ESPAsyncWebServer.h>
+#include <PID_v1.h>
 
-//motor numbering
-#define MOTOR 0
 
 //Action taken
 #define UP 1
@@ -23,7 +17,14 @@
 int speedVal =0;//0-10 from the webserver input
 int motorPWM =0;//map speedVal from 0-255 for pwm magnitude
 volatile int encoderValue = 0;//value of encoder
-volatile int lastMillis = 0;
+float distanceValue =0.0; //distance traveled in cm
+
+//PID controller
+double target =0.0;
+double Setpoint, Input, Output;
+double Kp=0.6, Ki=5, Kd=1;
+PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
+
 // Pin definitions
 //for motor control
 #define R_PWM 15
@@ -31,25 +32,21 @@ volatile int lastMillis = 0;
 #define L_EN  0
 #define R_EN  4
 //for encoder
-#define ENCA 12
-#define ENCB 14
+#define ENCA 22
+#define ENCB 23
 //Dimension of the wheel & encoder pulse per rotation
-#define CIR  0 //Circumference of the wheel
-#define PPR  0 //pulse per rotation
-#
-
+#define CIR  45.553055 //Circumference of the wheel
+#define PPR  900.0 //pulse per rotation
 
 //Create task to pin to cores
 TaskHandle_t Task1;
 TaskHandle_t Task2;
 
-// portMUX_TYPE synch = portMUX_INITIALIZER_UNLOCKED;
+/*        ENCODER     */
 
 //ISR to count encoder pulse
 void IRAM_ATTR ISR() {
 
-  // portENTER_CRITICAL(&synch);
-  if (millis()-lastMillis > 1){// To debounce
     if (digitalRead(ENCB) == digitalRead(ENCA)){
       //counterclockwise
       encoderValue--;
@@ -58,29 +55,31 @@ void IRAM_ATTR ISR() {
       //clockwise
       encoderValue++;
       }
-      lastMillis = millis();
-  } 
-    // portEXIT_CRITICAL(&synch);
   
 }
 //Processing the encoder value to display in cm
-int encToDistance(int encoderValue)
+float encToDistance(int encoderValue)
 {
-  return (encoderValue/PPR)*CIR  ;
+  // Serial.println((encoderValue/PPR)*CIR);
+  return ((encoderValue/PPR)*CIR) ;
 }
 
+/*        PID Control     */
 
-//motor pins struct
-struct MOTOR_PINS
-{
-  int pinIN1;
-  int pinIN2;    
-};
+//Function take in setpoint(target distance).
+//Its Input is based on cm from distanceValue
+//it returns Output (0-255)
+int PIDcontrol(double target){
 
-std::vector<MOTOR_PINS> motorPins = 
-{
-  {R_PWM, L_PWM},  //MOTOR
-};
+  Setpoint = target;  
+  Input = distanceValue;
+  myPID.Compute();
+  Serial.println(Output);
+  return Output;
+
+}
+
+/*        Server     */
 
 //WiFi name and password
 const char* ssid     = "Group1";
@@ -104,14 +103,10 @@ const char* htmlHomePage PROGMEM = R"HTMLHOMEPAGE(
    }
     .arrows {
       font-size:70px;
-      color:red;
-    }
-    .circularArrows {
-      font-size:80px;
-      color:blue;
+      color:gainsboro;
     }
     td {
-      background-color:black;
+      background-color:teal;
       border-radius:25%;
       box-shadow: 5px 5px #888888;
     }
@@ -132,18 +127,20 @@ const char* htmlHomePage PROGMEM = R"HTMLHOMEPAGE(
     </style>
   </head>
   <title>Group 1 WiFi Car</title>
-  <body class="noselect" align="center" style="background-color:white">
+  <body class="noselect" align="center" style="background-color:dimgrey">
      
-    <h1 style="color: teal;text-align:center;">Microcontroller Group 1</h1>
-    <h2 style="color: teal;text-align:center;">Wi-Fi &#128663; Control</h2>
-    <p>Rotary Encoder Value: <span id="encoderValue">0</span></p>
+    <h1 style="color: black;text-align:center;">Microcontroller Group 1</h1>
+    <h2 style="color: black;text-align:center;">Wi-Fi &#128663; Control</h2>
+    <p>Distance moved: <span id="encoderValue">0</span> cm</p>
     <p>Speed: <span id="speedVal">0</span></p>
     <table id="mainTable" style="width:400px;margin:auto;table-layout:fixed" CELLSPACING=10>
       <tr>
         <td ontouchstart='onTouchStartAndEnd("1")' ontouchend='onTouchStartAndEnd("0")'><span class="arrows" >&#8679;</span></td>
         <td ontouchstart='onTouchStartAndEnd("3")' ontouchend='onTouchStartAndEnd("0")'><span class="arrows" >&#8679;</span></td>
       </tr>
-
+      <tr>
+        <td ontouchstart='onTouchStartAndEnd("5")' ontouchend='onTouchStartAndEnd("0")'><span class="arrows" >Move 1m</span></td>
+      </tr>
       
       <tr>
         <td ontouchstart='onTouchStartAndEnd("2")' ontouchend='onTouchStartAndEnd("0")'><span class="arrows" >&#8681;</span></td>
@@ -192,28 +189,8 @@ const char* htmlHomePage PROGMEM = R"HTMLHOMEPAGE(
 
 )HTMLHOMEPAGE";
 
-//To handle moving motor forward and backward
-void rotateMotor(int motorNumber, int motorDirection)
-{
-  if (motorDirection == FORWARD)
-  { 
-    ledcWrite(0, motorPWM);//(channel, dutycycle)L_PWM
-    ledcWrite(1, 0);//(channel, dutycycle)R_PWM
+/*        Server -> Client     */
 
-  }
-  else if (motorDirection == BACKWARD)
-  {
-    ledcWrite(0, 0);//(channel, dutycycle)L_PWM
-    ledcWrite(1, motorPWM);//(channel, dutycycle)R_PWM
-  }
-  else
-  {
-    ledcWrite(0, 0);//(channel, dutycycle)L_PWM
-    ledcWrite(1, 0);//(channel, dutycycle)R_PWM     
-  }
-}
-
-//Actions triggered from websocket movement buttons
 void processCarMovement(String inputValue)
 {
   Serial.printf("Got value as %s %d\n", inputValue.c_str(), inputValue.toInt());  
@@ -221,12 +198,14 @@ void processCarMovement(String inputValue)
   {
 
     case UP:
-      rotateMotor(MOTOR, FORWARD);
+    ledcWrite(0, motorPWM);//(channel, dutycycle)L_PWM
+    ledcWrite(1, 0);//(channel, dutycycle)R_PWM
                 
       break;
   
     case DOWN:
-      rotateMotor(MOTOR, BACKWARD);
+    ledcWrite(0, 0);//(channel, dutycycle)L_PWM
+    ledcWrite(1, motorPWM);//(channel, dutycycle)R_PWM
  
       break;
 
@@ -241,15 +220,22 @@ void processCarMovement(String inputValue)
        speedVal = speedVal -1;
     }
       break;
-
+    case 5:
+      target = 100.0;//set target to 100cm
+      while (target > distanceValue){
+      ledcWrite(0,PIDcontrol(target));
+      }
+      break;
   
     case STOP:
-      rotateMotor(MOTOR, STOP);
+    ledcWrite(0, 0);//(channel, dutycycle)L_PWM
+    ledcWrite(1, 0);//(channel, dutycycle)R_PWM  
   
       break;
   
     default:
-      rotateMotor(MOTOR, STOP);
+    ledcWrite(0, 0);//(channel, dutycycle)L_PWM
+    ledcWrite(1, 0);//(channel, dutycycle)R_PWM  
   
       break;
   }
@@ -299,10 +285,8 @@ void onWebSocketEvent(AsyncWebSocket *server,
     default:
       break;  
   }
-
-  //MAIN CODE
-
 }
+/*        Main Code     */
 
 void setup() {
   //Initialize Serial COM
@@ -324,33 +308,36 @@ void setup() {
   Serial.println("HTTP server started");
 
   //encoder
-  attachInterrupt(digitalPinToInterrupt(ENCA), ISR, RISING);
+  attachInterrupt(digitalPinToInterrupt(ENCA), ISR, RISING);//(Interrupt channel, function to call, condition for calling)
 
   //BTS7960 MOTOR CONTROL
   ledcAttachPin(L_PWM, 0);// (pin, pwm channel)
   ledcAttachPin(R_PWM, 1);
   ledcSetup(0, 1000, 8);// (channel,, freq, resolution)
   ledcSetup(1, 1000, 8);
-  
   pinMode(L_EN,OUTPUT);
   pinMode(R_EN,OUTPUT);
+    //Encoder pinMode
   pinMode(ENCA,INPUT);
   pinMode(ENCB,INPUT);
   
   //Enable Motor to run
  digitalWrite(L_EN,HIGH);
  digitalWrite(R_EN,HIGH);
+  
+  //turn the PID on
+  myPID.SetMode(AUTOMATIC);
 
   //create a task that will be executed in the Task1code() function, with priority 1 and executed on core 0
-  xTaskCreatePinnedToCore(
-                    Task1code,   /* Task function. */
-                    "Task1",     /* name of task. */
-                    10000,       /* Stack size of task */
-                    NULL,        /* parameter of the task */
-                    1,           /* priority of the task */
-                    &Task1,      /* Task handle to keep track of created task */
-                    0);          /* pin task to core 0 */                  
-  delay(500); 
+  // xTaskCreatePinnedToCore(
+  //                   Task1code,   /* Task function. */
+  //                   "Task1",     /* name of task. */
+  //                   10000,       /* Stack size of task */
+  //                   NULL,        /* parameter of the task */
+  //                   1,           /* priority of the task */
+  //                   &Task1,      /* Task handle to keep track of created task */
+  //                   0);          /* pin task to core 0 */                  
+  // delay(500); 
 
   //create a task that will be executed in the Task2code() function, with priority 1 and executed on core 1
   xTaskCreatePinnedToCore(
@@ -365,14 +352,13 @@ void setup() {
 }
 
 
-void Task1code( void * pvParameters ){
-  Serial.print("Task1 running on core ");
-  Serial.println(xPortGetCoreID());
-for(;;){
-  
-delay(1);
-} 
-}
+// void Task1code( void * pvParameters ){
+//   Serial.print("Task1 running on core ");
+//   Serial.println(xPortGetCoreID());
+// for(;;){
+
+// } 
+// }
 
 void Task2code( void * pvParameters ){
   Serial.print("Task2 running on core ");
@@ -381,10 +367,11 @@ for(;;){
   //Map the speedVal that we obtain from the webserver client to an 8 bit value 
   motorPWM = map(speedVal,0,10,0,255);
   
-  Serial.println(encoderValue);
-  Serial.println(motorPWM);
+  // Serial.println(encoderValue);
+  // Serial.println(motorPWM);
   //update the encoderValue and speedVal to the webserver
-  ws.printfAll("{\"encoderValue\": %d}", encToDistance(encoderValue));
+  distanceValue = encToDistance(encoderValue);
+  ws.printfAll("{\"encoderValue\": %.2f}",distanceValue);
   ws.printfAll("{\"speedVal\": %d}", speedVal);
   //free resources of disconected clients
   ws.cleanupClients(); 
