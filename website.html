@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <script src="https://code.highcharts.com/highcharts.js"></script>
+  <style>
+    .header-wrapper {
+      text-align: center;
+    }
+
+    #content {
+      display: flex;
+      flex-direction: row;
+    }
+
+    #left {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      width: 30%;
+      padding: 0 20px;
+    }
+
+    #right {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      width: 70%;
+      padding: 0 20px;
+    }
+
+    #slider-container {
+      height: 300px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      margin: 0 auto;
+    }
+
+    #slider {
+      appearance: none;
+      transform: rotate(270deg) translateY(-50%);
+      width: 200px;
+      height: 20px;
+      background: #AAAAAA;
+      outline: none;
+      opacity: 0.7;
+      transition: opacity 0.2s;
+      position: absolute;
+      top: 50%;
+    }
+
+    #slider::-webkit-slider-thumb {
+      appearance: none;
+      width: 40px;
+      height: 40px;
+      background: #678dc8;
+      cursor: pointer;
+      border-radius: 50%;
+      border: 1px solid white;
+    }
+
+    #graph {
+      width: 300px;
+      height: 300px;
+    }
+
+    form {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    label {
+      display: flex;
+      flex-direction: row;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    label span {
+      margin-right: 10px;
+    }
+
+    .noselect {
+      -webkit-touch-callout: none;
+      /* iOS Safari */
+      -webkit-user-select: none;
+      /* Safari */
+      -khtml-user-select: none;
+      /* Konqueror HTML */
+      -moz-user-select: none;
+      /* Firefox */
+      -ms-user-select: none;
+      /* Internet Explorer/Edge */
+      user-select: none;
+      /* Non-prefixed version, currently
+                                      supported by Chrome and Opera */
+    }
+  </style>
+</head>
+<title>Group 1 WiFi Car</title>
+
+<body class="noselect" align="center" style="background-color:dimgrey">
+  <div class="header-wrapper">
+    <h1 style="color: black;text-align:center;">Microcontroller Group 1</h1>
+    <h2 style="color: black;text-align:center;">Wi-Fi &#128663; Control</h2>
+  </div>
+  <div id="content">
+    <div id="left">
+      <div id="slider-container">
+        <input type="range" min="-100" max="100" value="0" step="1" id="slider">
+      </div>
+    </div>
+
+    <div id="right">
+      <p>Distance moved: <span id="encoderValue">0</span> cm</p>
+      <label for="speed">Speed: <span id="speedVal">0</span> </label>
+      <div id="graph" class="container"></div>
+
+
+      <form id="myForm">
+        <table>
+          <tr>
+            <td><label for="Kp">Kp:<span id="disp_Kp">0</span></label></td>
+            <td><input type="number" id="Kp" name="Kp" step="0.01"></td>
+          </tr>
+          <tr>
+            <td><label for="Ki">Ki:<span id="disp_Ki">0</span></label></td>
+            <td><input type="number" id="Ki" name="Ki" step="0.01"></td>
+          </tr>
+          <tr>
+            <td><label for="Kd">Kd:<span id="disp_Kd">0</span></label></td>
+            <td><input type="number" id="Kd" name="Kd" step="0.01"></td>
+          </tr>
+          <tr>
+            <td><label for="setPoint">Target:<span id="disp_setPoint">0</span></label></td>
+            <td><input type="number" id="setPoint" name="setPoint" step="0.01"></td>
+          </tr>
+          <tr>
+            <td colspan="2"><input type="submit" value="Run!"></td>
+          </tr>
+        </table>
+      </form>
+
+    </div>
+  </div>
+
+</body>
+
+<script>
+  var webSocketUrl = "ws:\/\/" + window.location.hostname + "/ws";
+  var websocket;
+
+  var myChart = new Highcharts.Chart({
+    chart: { renderTo: 'graph' },
+    title: { text: 'Distance vs Time' },
+    series: [{
+      showInLegend: false,
+      data: []
+    }],
+    plotOptions: {
+      line: {
+        animation: false,
+        dataLabels: { enabled: true }
+      },
+      series: { color: '#059e8a' }
+    },
+    xAxis: {
+      categories: [],
+      title: { text: 'Time' }
+    },
+    yAxis: {
+      title: { text: 'Distance' }
+    },
+    credits: { enabled: false }
+  });
+
+  // Add a new data point to the chart
+  var series = myChart.series[0];
+  function addDataPoint(time, distance) {
+    var xValue = time;
+    var yValue = parseFloat(distance);
+    series.addPoint([xValue, yValue], true, false);
+  }
+  function initWebSocket() {
+    websocket = new WebSocket(webSocketUrl);
+    websocket.onopen = function (event) { };
+    websocket.onclose = function (event) { setTimeout(initWebSocket, 2000); };
+    websocket.onmessage = function (event) {
+      // Parse the received data as JSON
+      let data = JSON.parse(event.data);
+      var time_ = 0;
+      var distance_ = 0;
+      // Check if the received data contains the new encoder value
+      if (data.encoderValue) {
+        // Update the innerHTML property of the encoderValue element with the new value
+        document.getElementById("encoderValue").innerHTML = data.encoderValue;
+        distance_ = data.encoderValue;
+        console.log("distance received");
+      }
+      if (data.time_) {
+        time_ = data.time_;
+        addDataPoint(time_, distance_);
+        console.log("time received");
+      }
+      // if (data.disp_Kp) {
+      //   // Update the innerHTML property of the encoderValue element with the new value
+      //   document.getElementById("disp_Kp").innerHTML = data.disp_Kp;
+      // }
+      // if (data.disp_Ki) {
+      //   // Update the innerHTML property of the encoderValue element with the new value
+      //   document.getElementById("disp_Ki").innerHTML = data.disp_Ki;
+      // }
+      // if (data.disp_Kd) {
+      //   // Update the innerHTML property of the encoderValue element with the new value
+      //   document.getElementById("disp_Kd").innerHTML = data.disp_Kd;
+      // }
+      // if (data.disp_setPoint) {
+      //   // Update the innerHTML property of the encoderValue element with the new value
+      //   document.getElementById("disp_setPoint").innerHTML = data.disp_setPoint;
+      // }
+
+    };
+  }
+  window.onload = function () {
+    initWebSocket();
+  };
+
+  const slider = document.getElementById("slider");
+
+  slider.addEventListener("input", () => {
+    const value = slider.value;
+    // Create a JSON object to send to the server
+    const data = { sliderValue: value };
+    // Convert the JSON object to a string and send it over the WebSocket
+    websocket.send(JSON.stringify(data));
+    document.getElementById("speedVal").innerHTML = value;
+  });
+
+  slider.addEventListener("touchend", () => {
+    if (slider.value !== 0) {
+      slider.value = 0;
+      const value = slider.value;
+      // Create a JSON object to send to the server
+      const data = { sliderValue: value };
+      // Convert the JSON object to a string and send it over the WebSocket
+      websocket.send(JSON.stringify(data));
+      document.getElementById("speedVal").innerHTML = value;
+    }
+  });
+
+  const form = document.querySelector('form');
+  form.addEventListener('submit', (event) => {
+    event.preventDefault(); // prevent the form from submitting normally
+    const data = {
+      Kp: parseFloat(document.getElementById('Kp').value),
+      Ki: parseFloat(document.getElementById('Ki').value),
+      Kd: parseFloat(document.getElementById('Kd').value),
+      setPoint: parseFloat(document.getElementById('setPoint').value)
+    };
+    document.getElementById("disp_Kp").innerHTML = data.Kp;
+    document.getElementById("disp_Ki").innerHTML = data.Ki;
+    document.getElementById("disp_Kd").innerHTML = data.Kd;
+    document.getElementById("disp_setPoint").innerHTML = data.setPoint;
+
+    websocket.send(JSON.stringify(data));
+    document.getElementById("myForm").reset();
+  });
+
+</script>
+
+</html>
