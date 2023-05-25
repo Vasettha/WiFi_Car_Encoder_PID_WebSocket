@@ -18,7 +18,7 @@ double Setpoint, Input, Output;
 double Kp = 0.8, Ki = 0.5, Kd = 0.7;
 PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 
-//freeRTOS
+// freeRTOS
 TaskHandle_t updateTask;
 TaskHandle_t serverTask;
 TaskHandle_t PIDTask;
@@ -113,12 +113,9 @@ void checkSerial1()
   }
 }
 
-
-
 /*        Server     */
 
 // WiFi name and password
-
 const char *ssid = "your_ssid";
 const char *password = "your_password";
 
@@ -135,28 +132,11 @@ AsyncWebSocket ws("/ws");
 int PIDcontrol(double target)
 {
   myPID.SetOutputLimits(-255.0, 255.0);
-  myPID.SetSampleTime(10);
+  myPID.SetSampleTime(50);
   Setpoint = target;
   Input = distanceValue;
   myPID.Compute();
-
-  // Serial.print(Kp);
-  // Serial.print(" ");
-  // Serial.print(Ki);
-  // Serial.print(" ");
-  // Serial.print(Kd);
-  // Serial.print(" ");
-  // Serial.print(Setpoint);
-  // Serial.print(" ");
-  // Serial.print(Input);
-  // Serial.print(" ");
-  // Serial.println(Output);
-
   return Output;
-}
-
-void PID_websocket_update(){
-
 }
 
 /*        Server -> Client     */
@@ -196,9 +176,10 @@ void process_PID_parameter(double Kp_, double Ki_, double Kd_, double Setpoint_)
   lcd.setCursor(0, 1);
   lcd.print(String(Kp) + "," + String(Ki) + "," + String(Kd));
 
-  if(PIDTask != NULL){
+  if (PIDTask != NULL)
+  {
     vTaskResume(PIDTask);
-    Serial.println("PIDTask Started");
+    // Serial.println("PIDTask Started");
   }
 }
 
@@ -266,46 +247,51 @@ void onWebSocketEvent(AsyncWebSocket *server,
 
 /*        FreeRTOS Task     */
 
-void updateTaskCode(void *parameter){
-  for(;;)
+void updateTaskCode(void *parameter)
 {
-  vTaskDelay(300/portTICK_PERIOD_MS);
-  // update the encoderValue to the webserver
-  distanceValue = encToDistance(encoderValue);
-  ws.printfAll("{\"encoderValue\": %.2f}", distanceValue);
-  ws.cleanupClients();
-  checkSerial1(); // update PID parameters
-
+  for (;;)
+  {
+    vTaskDelay(300 / portTICK_PERIOD_MS);
+    // update the encoderValue to the webserver
+    distanceValue = encToDistance(encoderValue);
+    ws.printfAll("{\"encoderValue\": %.2f}", distanceValue);
+    ws.cleanupClients();
+    checkSerial1(); // update PID parameters
+  }
 }
-}
-void serverTaskCode(void *parameter) {
-    // start server and websocket
+void serverTaskCode(void *parameter)
+{
+  // start server and websocket
   server.on("/", HTTP_GET, handleRoot);
   server.onNotFound(handleNotFound);
   ws.onEvent(onWebSocketEvent);
   server.addHandler(&ws);
   server.begin();
   Serial.println("HTTP server started");
-  for (;;) {
-    vTaskDelay(1000/portTICK_PERIOD_MS);
+  for (;;)
+  {
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
-void PIDTaskCode(void *parameter){
-  // if (updateTask != NULL){
-  //   vTaskSuspend(updateTask);
-  // }
-  //PID code
+void PIDTaskCode(void *parameter)
+{
+
+  // PID code
   myPID.SetTunings(Kp, Ki, Kd);
   double difference = Setpoint - distanceValue;
   int lastMillis2 = 0;
-  while (difference > 1 || difference < -1)//difference != 0
+  while (difference > 1 || difference < -1) 
   {
-    if (millis() > lastMillis2+300){    
-      time_ = millis()/1000;
+    distanceValue = encToDistance(encoderValue);
+    difference = Setpoint - distanceValue;
+    if (millis() > lastMillis2 + 300)
+    {
+      time_ = millis() / 1000;
       ws.printfAll("{\"encoderValue\": %.2f, \"time_\": %.2f}", distanceValue, time_);
       lastMillis2 = millis();
-      }
+    }
     out = PIDcontrol(Setpoint);
+    Serial.println(out);
     if (out > 0)
     { // forward
       ledcWrite(0, out);
@@ -321,13 +307,10 @@ void PIDTaskCode(void *parameter){
       ledcWrite(0, 0);
       ledcWrite(1, 0);
     }
-    distanceValue = encToDistance(encoderValue);
-    difference = Setpoint - distanceValue;
-}
-// if(updateTask != NULL){
-//     vTaskResume(updateTask);
-//   }
-vTaskSuspend(NULL);//suspend itself after done
+  }
+  ledcWrite(0, 0);
+  ledcWrite(1, 0);
+  vTaskSuspend(NULL); // suspend itself after done
 }
 
 /*        Main Code     */
@@ -337,8 +320,7 @@ void setup()
   // Initialize Serial COM
   Serial.begin(115200);
   Serial1.begin(9600, SERIAL_8N1, BLE_RX, BLE_TX);
-  // Set WiFi mode to an Access point with the previously defined ssid and password
-  // WiFi.softAP(ssid, password);
+
   // Set WiFi mode to an STA mode with the previously defined ssid and password
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED)
@@ -373,8 +355,6 @@ void setup()
   lcd.begin();
   lcd.backlight();
 
-
-
   // update lcd
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -403,15 +383,17 @@ void setup()
   // turn the PID on
   myPID.SetMode(AUTOMATIC);
 
-  xTaskCreatePinnedToCore(updateTaskCode,"updateTask",5000,NULL,1,&updateTask,1);
-  xTaskCreatePinnedToCore(PIDTaskCode,"PIDTask",5000,NULL,1,&PIDTask,1);
-  if (PIDTask != NULL){
+  xTaskCreatePinnedToCore(updateTaskCode, "updateTask", 5000, NULL, 1, &updateTask, 1);
+  xTaskCreatePinnedToCore(PIDTaskCode, "PIDTask", 5000, NULL, 1, &PIDTask, 1);
+  if (PIDTask != NULL)
+  {
     vTaskSuspend(PIDTask);
-    Serial.println("Task Sucessfully suspended");
+    // Serial.println("Task Sucessfully suspended");
   }
   xTaskCreatePinnedToCore(serverTaskCode, "serverTask", 10000, NULL, 1, &serverTask, 0);
 }
 
-void loop(){
+void loop()
+{
   delay(1000);
 }
