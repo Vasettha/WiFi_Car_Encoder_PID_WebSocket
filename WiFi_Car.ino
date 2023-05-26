@@ -294,13 +294,13 @@ void PIDTaskCode(void *parameter)
     Serial.println(out);
     if (out > 0)
     { // forward
-      ledcWrite(0, out);
+      ledcWrite(0, abs(out));
       ledcWrite(1, 0);
     }
     else if (out < 0)
     { // reverse
       ledcWrite(0, 0);
-      ledcWrite(1, out);
+      ledcWrite(1, abs(out));
     }
     else
     { // stop both motors
