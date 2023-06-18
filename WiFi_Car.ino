@@ -15,7 +15,7 @@ int out = 0;
 float time_;
 double target = 100.0;
 double Setpoint, Input, Output;
-double Kp = 0.8, Ki = 0.5, Kd = 0.7;
+double Kp = 5, Ki = 0.8, Kd = 1.1;
 PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 
 // freeRTOS
@@ -116,8 +116,10 @@ void checkSerial1()
 /*        Server     */
 
 // WiFi name and password
+
 const char *ssid = "your_ssid";
 const char *password = "your_password";
+
 
 // set web server to use port 80
 AsyncWebServer server(80);
@@ -139,7 +141,7 @@ int PIDcontrol(double target)
   return Output;
 }
 
-/*        Server -> Client     */
+/*        Server <-> Client     */
 
 void processCarMovement(String inputValue)
 {
@@ -226,9 +228,15 @@ void onWebSocketEvent(AsyncWebSocket *server,
       {
         processCarMovement(doc["sliderValue"]);
       }
-      else if (doc.containsKey("Kp") && doc.containsKey("Ki") && doc.containsKey("Kd") && doc.containsKey("setPoint"))
+      else if (doc.containsKey("Kp") && doc.containsKey("Ki") && doc.containsKey("Kd"))
       {
-        process_PID_parameter(doc["Kp"], doc["Ki"], doc["Kd"], doc["setPoint"]);
+        Kp = doc["Kp"];
+        Ki = doc["Ki"];
+        Kd = doc["Kd"];
+      }
+      else if (doc.containsKey("setPoint"))
+      {
+        process_PID_parameter(Kp, Ki, Kd, doc["setPoint"]);
       }
       else
       {
@@ -269,18 +277,20 @@ void serverTaskCode(void *parameter)
   server.begin();
   Serial.println("HTTP server started");
   for (;;)
-  {
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+  {  
+    ws.printfAll("{\"disp_Kp\": %.2f, \"disp_Ki\": %.2f, \"disp_Kd\": %.2f, \"disp_setPoint\": %.2f}",Kp, Ki, Kd, Setpoint);
+    vTaskDelay(2000 / portTICK_PERIOD_MS);
   }
 }
 void PIDTaskCode(void *parameter)
 {
-
+  while(1){
+  Serial.println("PID Task Started");
   // PID code
   myPID.SetTunings(Kp, Ki, Kd);
   double difference = Setpoint - distanceValue;
   int lastMillis2 = 0;
-  while (difference > 1 || difference < -1) 
+  while (difference > 0.5 || difference < -0.5) 
   {
     distanceValue = encToDistance(encoderValue);
     difference = Setpoint - distanceValue;
@@ -310,7 +320,10 @@ void PIDTaskCode(void *parameter)
   }
   ledcWrite(0, 0);
   ledcWrite(1, 0);
-  vTaskSuspend(NULL); // suspend itself after done
+  Serial.println("PID Task Done");
+
+  vTaskSuspend(NULL);
+  }
 }
 
 /*        Main Code     */
@@ -383,14 +396,15 @@ void setup()
   // turn the PID on
   myPID.SetMode(AUTOMATIC);
 
-  xTaskCreatePinnedToCore(updateTaskCode, "updateTask", 5000, NULL, 1, &updateTask, 1);
-  xTaskCreatePinnedToCore(PIDTaskCode, "PIDTask", 5000, NULL, 1, &PIDTask, 1);
+  //FreeRTOS Task
+  xTaskCreatePinnedToCore(updateTaskCode, "updateTask", 5000, NULL, 1, &updateTask, 0);
+  xTaskCreatePinnedToCore(PIDTaskCode, "PIDTask", 5000, NULL, 1, &PIDTask, 0);
   if (PIDTask != NULL)
   {
     vTaskSuspend(PIDTask);
     // Serial.println("Task Sucessfully suspended");
   }
-  xTaskCreatePinnedToCore(serverTaskCode, "serverTask", 10000, NULL, 1, &serverTask, 0);
+  xTaskCreatePinnedToCore(serverTaskCode, "serverTask", 10000, NULL, 1, &serverTask, 1);
 }
 
 void loop()
