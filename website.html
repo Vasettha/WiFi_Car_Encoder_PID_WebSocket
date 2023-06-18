@@ -73,6 +73,22 @@
       align-items: center;
     }
 
+    .form-container {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      margin-top: 20px;
+    }
+
+    .form-container table {
+      width: 100%;
+    }
+
+    .form-container table td {
+      padding: 5px;
+    }
+
+
     label {
       display: flex;
       flex-direction: row;
@@ -121,31 +137,37 @@
       <label for="speed">Speed: <span id="speedVal">0</span> </label>
       <div id="graph" class="container"></div>
 
+      <div class="form-container">
+        <form id="FormK">
+          <table>
+            <tr>
+              <td><label for="Kp">Kp:<span id="disp_Kp">0</span></label></td>
+              <td><input type="number" id="Kp" name="Kp" step="0.01"></td>
+            </tr>
+            <tr>
+              <td><label for="Ki">Ki:<span id="disp_Ki">0</span></label></td>
+              <td><input type="number" id="Ki" name="Ki" step="0.01"></td>
+            </tr>
+            <tr>
+              <td><label for="Kd">Kd:<span id="disp_Kd">0</span></label></td>
+              <td><input type="number" id="Kd" name="Kd" step="0.01"></td>
+            </tr>
+            <tr>
+              <td colspan="2"><input type="submit" id="submitK" value="Submit"></td>
+            </tr>
+          </table>
+        </form>
 
-      <form id="myForm">
-        <table>
-          <tr>
-            <td><label for="Kp">Kp:<span id="disp_Kp">0</span></label></td>
-            <td><input type="number" id="Kp" name="Kp" step="0.01"></td>
-          </tr>
-          <tr>
-            <td><label for="Ki">Ki:<span id="disp_Ki">0</span></label></td>
-            <td><input type="number" id="Ki" name="Ki" step="0.01"></td>
-          </tr>
-          <tr>
-            <td><label for="Kd">Kd:<span id="disp_Kd">0</span></label></td>
-            <td><input type="number" id="Kd" name="Kd" step="0.01"></td>
-          </tr>
+        <form id="FormSetpoint">
           <tr>
             <td><label for="setPoint">Target:<span id="disp_setPoint">0</span></label></td>
             <td><input type="number" id="setPoint" name="setPoint" step="0.01"></td>
           </tr>
           <tr>
-            <td colspan="2"><input type="submit" value="Run!"></td>
+            <td colspan="2"><input type="submit" id="submitSetpoint" value="Run!"></td>
           </tr>
-        </table>
-      </form>
-
+        </form>
+      </div>
     </div>
   </div>
 
@@ -207,22 +229,22 @@
         addDataPoint(time_, distance_);
         console.log("time received");
       }
-      // if (data.disp_Kp) {
-      //   // Update the innerHTML property of the encoderValue element with the new value
-      //   document.getElementById("disp_Kp").innerHTML = data.disp_Kp;
-      // }
-      // if (data.disp_Ki) {
-      //   // Update the innerHTML property of the encoderValue element with the new value
-      //   document.getElementById("disp_Ki").innerHTML = data.disp_Ki;
-      // }
-      // if (data.disp_Kd) {
-      //   // Update the innerHTML property of the encoderValue element with the new value
-      //   document.getElementById("disp_Kd").innerHTML = data.disp_Kd;
-      // }
-      // if (data.disp_setPoint) {
-      //   // Update the innerHTML property of the encoderValue element with the new value
-      //   document.getElementById("disp_setPoint").innerHTML = data.disp_setPoint;
-      // }
+      if (data.disp_Kp) {
+        // Update the innerHTML property of the encoderValue element with the new value
+        document.getElementById("disp_Kp").innerHTML = data.disp_Kp;
+      }
+      if (data.disp_Ki) {
+        // Update the innerHTML property of the encoderValue element with the new value
+        document.getElementById("disp_Ki").innerHTML = data.disp_Ki;
+      }
+      if (data.disp_Kd) {
+        // Update the innerHTML property of the encoderValue element with the new value
+        document.getElementById("disp_Kd").innerHTML = data.disp_Kd;
+      }
+      if (data.disp_setPoint) {
+        // Update the innerHTML property of the encoderValue element with the new value
+        document.getElementById("disp_setPoint").innerHTML = data.disp_setPoint;
+      }
 
     };
   }
@@ -253,22 +275,32 @@
     }
   });
 
-  const form = document.querySelector('form');
-  form.addEventListener('submit', (event) => {
+  const form1 = document.getElementById('FormK');
+  form1.addEventListener('submit', (event) => {
     event.preventDefault(); // prevent the form from submitting normally
     const data = {
       Kp: parseFloat(document.getElementById('Kp').value),
       Ki: parseFloat(document.getElementById('Ki').value),
       Kd: parseFloat(document.getElementById('Kd').value),
-      setPoint: parseFloat(document.getElementById('setPoint').value)
     };
     document.getElementById("disp_Kp").innerHTML = data.Kp;
     document.getElementById("disp_Ki").innerHTML = data.Ki;
     document.getElementById("disp_Kd").innerHTML = data.Kd;
+
+    websocket.send(JSON.stringify(data));
+    document.getElementById("FormK").reset();
+  });
+  const form2 = document.getElementById('FormSetpoint');
+  form2.addEventListener('submit', (event) => {
+    event.preventDefault(); // prevent the form from submitting normally
+    const data = {
+      setPoint: parseFloat(document.getElementById('setPoint').value)
+    };
+
     document.getElementById("disp_setPoint").innerHTML = data.setPoint;
 
     websocket.send(JSON.stringify(data));
-    document.getElementById("myForm").reset();
+    document.getElementById("FormSetpoint").reset();
   });
 
 </script>
